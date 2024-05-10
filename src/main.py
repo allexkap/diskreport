@@ -7,7 +7,11 @@ class Node:
         self.name = Path(path).absolute().name if _entry is None else _entry.name
         try:
             if _entry is None or _entry.is_dir():
-                self.dirs = tuple(Node(entry.path, entry) for entry in os.scandir(path))
+                self.dirs = sorted(
+                    (Node(entry.path, entry) for entry in os.scandir(path)),
+                    key=lambda n: (n.dirs is not None, n.size),
+                    reverse=True,
+                )
                 self.size = sum(node.size for node in self.dirs)
             else:
                 self.dirs = None
