@@ -1,5 +1,4 @@
 use std::env;
-use std::error::Error;
 use std::path::Path;
 
 fn main() {
@@ -7,33 +6,36 @@ fn main() {
     assert!(args.len() == 2);
     let root_path = Path::new(&args[1]);
 
-    match Entry::build(root_path) {
+    match ReportEntry::build(root_path) {
         Ok(data) => {
-            println!("{} {}", data.name, data.size);
+            println!("{}: {} Mb", data.name, data.size / u64::pow(2, 20));
         }
         Err(error) => eprintln!("{}: {}", root_path.display(), error),
     }
 }
 
 #[derive(Debug)]
-struct Entry {
+struct ReportEntry {
     name: String,
     size: u64,
-    dir: Option<Vec<Entry>>,
+    dir_entries: Option<Vec<ReportEntry>>,
 }
 
-impl Entry {
-    fn build(root_path: &Path) -> Result<Entry, Box<dyn Error>> {
+impl ReportEntry {
+    fn build(root_path: &Path) -> Result<ReportEntry, &'static str> {
+        if !root_path.is_dir() {
+            return Err("root path is not dir");
+        }
         let data = walker(&root_path);
-        Ok(Entry {
+        Ok(ReportEntry {
             name: root_path.to_string_lossy().into_owned(),
-            size: data.iter().map(|e| e.size).sum::<u64>(),
-            dir: Some(data),
+            size: data.iter().map(|e| e.size).sum(),
+            dir_entries: Some(data),
         })
     }
 }
 
-fn walker(dir_path: &Path) -> Vec<Entry> {
+fn walker(dir_path: &Path) -> Vec<ReportEntry> {
     let mut content = Vec::new();
     let Ok(dir) = dir_path.read_dir() else {
         return content;
@@ -45,18 +47,19 @@ fn walker(dir_path: &Path) -> Vec<Entry> {
         let name = entry.file_name().to_string_lossy().into_owned();
         content.push(if meta.is_dir() {
             let data = walker(entry.path().as_path());
-            Entry {
+            ReportEntry {
                 name,
-                size: data.iter().map(|e| e.size).sum::<u64>(),
-                dir: Some(data),
+                size: data.iter().map(|e| e.size).sum(),
+                dir_entries: Some(data),
             }
         } else {
-            Entry {
+            ReportEntry {
                 name,
                 size: meta.len(),
-                dir: None,
+                dir_entries: None,
             }
         })
     }
+    content.sort_by_key(|e| std::cmp::Reverse(e.size));
     content
 }
