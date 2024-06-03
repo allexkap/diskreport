@@ -7,10 +7,9 @@ fn main() {
     assert!(args.len() == 2);
     let root_path = Path::new(&args[1]);
 
-    match walker(root_path) {
+    match Entry::build(root_path) {
         Ok(data) => {
-            let size = data.iter().map(|e| e.size).sum::<u64>();
-            println!("{} Mb", size / 1048576);
+            println!("{} {}", data.name, data.size);
         }
         Err(error) => eprintln!("{}: {}", root_path.display(), error),
     }
@@ -23,48 +22,41 @@ struct Entry {
     dir: Option<Vec<Entry>>,
 }
 
-fn walker(root_path: &Path) -> Result<Vec<Entry>, Box<dyn Error>> {
-    match root_path.read_dir() {
-        Ok(dir) => {
-            let mut content = Vec::new();
-            for entry in dir {
-                match entry {
-                    Ok(entry) => {
-                        let path = entry.path();
-                        let Ok(name) = path
-                            .file_name()
-                            .unwrap_or(path.as_os_str())
-                            .to_owned()
-                            .into_string()
-                        else {
-                            eprintln!("Invalid Unicode data: {}", path.display());
-                            continue;
-                        };
-                        if path.is_dir() {
-                            match walker(&path) {
-                                Ok(inner_dir) => content.push(Entry {
-                                    name,
-                                    size: inner_dir.iter().map(|e| e.size).sum(),
-                                    dir: Some(inner_dir),
-                                }),
-                                Err(error) => eprintln!("{}: {}", error, path.display()),
-                            }
-                        } else {
-                            match path.metadata() {
-                                Ok(meta) => content.push(Entry {
-                                    name,
-                                    size: meta.len(),
-                                    dir: None,
-                                }),
-                                Err(error) => eprintln!("{}: {}", error, path.display()),
-                            }
-                        }
-                    }
-                    Err(error) => eprintln!("{}: {}", error, root_path.display()),
-                }
-            }
-            Ok(content)
-        }
-        Err(err) => Err(err.into()),
+impl Entry {
+    fn build(root_path: &Path) -> Result<Entry, Box<dyn Error>> {
+        let data = walker(&root_path);
+        Ok(Entry {
+            name: root_path.to_string_lossy().into_owned(),
+            size: data.iter().map(|e| e.size).sum::<u64>(),
+            dir: Some(data),
+        })
     }
+}
+
+fn walker(dir_path: &Path) -> Vec<Entry> {
+    let mut content = Vec::new();
+    let Ok(dir) = dir_path.read_dir() else {
+        return content;
+    };
+    for entry in dir {
+        let Ok(entry) = entry else { continue };
+        let Ok(meta) = entry.metadata() else { continue };
+
+        let name = entry.file_name().to_string_lossy().into_owned();
+        content.push(if meta.is_dir() {
+            let data = walker(entry.path().as_path());
+            Entry {
+                name,
+                size: data.iter().map(|e| e.size).sum::<u64>(),
+                dir: Some(data),
+            }
+        } else {
+            Entry {
+                name,
+                size: meta.len(),
+                dir: None,
+            }
+        })
+    }
+    content
 }
