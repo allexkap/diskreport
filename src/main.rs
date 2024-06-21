@@ -1,6 +1,7 @@
 use eframe::egui;
 use std::env;
 use std::path::Path;
+use std::rc::Rc;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -25,28 +26,37 @@ fn main() {
     eframe::run_native(
         "Disk Report",
         options,
-        Box::new(|_cc| Box::new(DiskReportApp { dir: report })),
+        Box::new(|_cc| {
+            Box::new(DiskReportApp {
+                dir_root: report.clone(),
+                selected_dir: report,
+            })
+        }),
     )
     .unwrap();
 }
 
 struct DiskReportApp {
-    dir: ReportEntry,
+    dir_root: ReportEntry,
+    selected_dir: ReportEntry,
 }
 
 impl DiskReportApp {
-    fn add_collapsing(ui: &mut egui::Ui, entry: &ReportEntry) {
+    fn _add_collapsing(&mut self, ui: &mut egui::Ui, entry: &ReportEntry) {
         if entry.dir_entries.is_some() {
-            ui.collapsing(entry.name.clone(), |ui| {
+            let col_resp = ui.collapsing(&entry.name, |ui| {
                 entry
                     .dir_entries
                     .as_ref()
                     .unwrap()
                     .iter()
-                    .for_each(|d| DiskReportApp::add_collapsing(ui, &d))
+                    .for_each(|d| self._add_collapsing(ui, &d))
             });
+            if col_resp.header_response.clicked() {
+                self.selected_dir = entry.clone();
+            }
         } else {
-            ui.label(entry.name.clone());
+            ui.label(&entry.name);
         }
     }
 }
@@ -54,17 +64,17 @@ impl DiskReportApp {
 impl eframe::App for DiskReportApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("My egui Application");
-            DiskReportApp::add_collapsing(ui, &self.dir);
+            ui.heading(&self.selected_dir.name);
+            self._add_collapsing(ui, &self.dir_root.clone());
         });
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ReportEntry {
     name: String,
     size: u64,
-    dir_entries: Option<Vec<ReportEntry>>,
+    dir_entries: Option<Rc<Vec<ReportEntry>>>,
 }
 
 impl ReportEntry {
@@ -76,7 +86,7 @@ impl ReportEntry {
         Ok(ReportEntry {
             name: root_path.to_string_lossy().into_owned(),
             size: data.iter().map(|e| e.size).sum(),
-            dir_entries: Some(data),
+            dir_entries: Some(Rc::new(data)),
         })
     }
 }
@@ -96,7 +106,7 @@ fn walker(dir_path: &Path) -> Vec<ReportEntry> {
             ReportEntry {
                 name,
                 size: data.iter().map(|e| e.size).sum(),
-                dir_entries: Some(data),
+                dir_entries: Some(Rc::new(data)),
             }
         } else {
             ReportEntry {
