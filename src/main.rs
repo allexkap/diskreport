@@ -1,5 +1,6 @@
 use eframe::egui;
 use std::env;
+use std::f32::consts::PI;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -63,13 +64,40 @@ impl DiskReportApp {
     }
     fn draw_pie(&self, painter: egui::Painter) {
         let clip_rect = painter.clip_rect();
-        painter.circle(
-            clip_rect.center(),
-            clip_rect.size().min_elem() / 2.0,
-            egui::Color32::WHITE,
-            egui::Stroke::new(1.0, egui::Color32::RED),
-        );
+        let center = clip_rect.center();
+        let radius = clip_rect.size().min_elem() / 2.0;
+        let w = vec![10, 3, 4, 12, 5];
+        let arcs = gen_points(w, &center, radius);
+        for points in arcs {
+            let arc = egui::epaint::QuadraticBezierShape::from_points_stroke(
+                points,
+                false,
+                egui::Color32::WHITE,
+                egui::Stroke::new(1.0, egui::Color32::RED),
+            );
+            painter.add(arc);
+        }
     }
+}
+
+fn gen_points(mut weights: Vec<u64>, center: &egui::Pos2, radius: f32) -> Vec<[egui::Pos2; 3]> {
+    let total = weights.iter().sum::<u64>() as f32;
+    weights.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let mut angle = 0.0;
+    weights
+        .into_iter()
+        .map(|w| {
+            let sector = w as f32 / total * 2.0 * PI;
+            let points: [egui::Pos2; 3] = [angle, angle + sector / 2.0, angle + sector]
+                .iter()
+                .map(|a| egui::Pos2::new(a.sin() * radius + center.x, a.cos() * radius + center.y))
+                .collect::<Vec<egui::Pos2>>()
+                .try_into()
+                .unwrap();
+            angle += sector;
+            points
+        })
+        .collect()
 }
 
 impl eframe::App for DiskReportApp {
